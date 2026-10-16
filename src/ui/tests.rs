@@ -46,7 +46,7 @@ fn charging() -> BatteryInfo {
         adapter_watts: Some(45),
         manufacturer: Some("DSY".into()),
         device_name: Some("bq20z451".into()),
-        serial: Some("F5D01752TC4N4F3AF".into()),
+        serial: Some("C0123456789ABCDEF".into()),
         manufacture_date: Some("2023-04-28".into()),
     }
 }
@@ -66,7 +66,7 @@ fn charging_dashboard_shows_all_panels() {
         "Normal",
         "Voltage",
         "Temperature",
-        "F5D01752TC4N4F3AF",
+        "C0123456789ABCDEF",
         "2023-04-28",
         "quit",
     ] {

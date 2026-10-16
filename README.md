@@ -115,18 +115,6 @@ cargo test          # unit tests for parsing, formatting, and rendering
 cargo clippy        # lints
 ```
 
-### Releasing
-
-Pushing a `v*` tag triggers the release workflow, which runs the tests,
-builds both architectures, combines them into one universal binary, ad-hoc
-signs it, and publishes `macbattery-macos-universal.tar.gz` plus
-`checksums.txt` to GitHub Releases:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
