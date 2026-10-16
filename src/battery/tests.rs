@@ -54,3 +54,17 @@ fn fmt_duration_shapes() {
     assert_eq!(fmt_duration(120), "2 h");
     assert_eq!(fmt_duration(106), "1 h 46 min");
 }
+
+#[test]
+fn capacity_from_scale_handles_mah_and_percent_values() {
+    // Real mAh values pass through untouched.
+    assert_eq!(capacity_from_scale(4382, 4381), 4382);
+    assert_eq!(capacity_from_scale(101, 4629), 101);
+    // 0-100 values are percentages of the reference capacity.
+    assert_eq!(capacity_from_scale(100, 4629), 4629);
+    assert_eq!(capacity_from_scale(84, 6075), 5103);
+    // Degenerate inputs never produce nonsense.
+    assert_eq!(capacity_from_scale(0, 4629), 0);
+    assert_eq!(capacity_from_scale(-5, 4629), 0);
+    assert_eq!(capacity_from_scale(100, 0), 0);
+}

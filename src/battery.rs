@@ -285,16 +285,26 @@ fn parse(props: CFRef) -> BatteryInfo {
     let design_capacity = get_i64(props, "DesignCapacity")
         .or(get_i64(battery_data, "DesignCapacity"))
         .unwrap_or(0) as u32;
-    // Prefer the raw (mAh) keys; the non-raw top-level keys are a last resort
-    // because on some models they hold a 0-100 percentage instead.
+
+    // Prefer the mAh keys. Newer gauges (e.g. bq40z651) drop the top-level
+    // AppleRaw* keys and keep the mAh values inside BatteryData instead; the
+    // bare top-level MaxCapacity key is a last resort because on many models
+    // it holds a 0-100 percentage that must be scaled, never read as mAh.
     let full_charge_capacity = get_i64(props, "AppleRawMaxCapacity")
         .or(get_i64(battery_data, "AppleRawMaxCapacity"))
-        .or(get_i64(props, "MaxCapacity"))
-        .unwrap_or(0) as u32;
-    let current_capacity = get_i64(props, "AppleRawCurrentCapacity")
+        .or(get_i64(props, "NominalChargeCapacity"))
+        .or(get_i64(battery_data, "NominalChargeCapacity"))
+        .or(get_i64(battery_data, "FullChargeCapacity"))
+        .map(|v| v.max(0) as u32)
+        .or_else(|| get_i64(props, "MaxCapacity").map(|v| capacity_from_scale(v, design_capacity)))
+        .unwrap_or(0);
+
+    // Raw mAh when available. The bare CurrentCapacity key is never used as
+    // mAh because it holds a percentage on every known model.
+    let current_capacity_hint = get_i64(props, "AppleRawCurrentCapacity")
         .or(get_i64(battery_data, "AppleRawCurrentCapacity"))
-        .or(get_i64(props, "CurrentCapacity"))
-        .unwrap_or(0) as u32;
+        .or(get_i64(battery_data, "RemainingCapacity"))
+        .map(|v| v.max(0) as u32);
 
     // Charge %: the fuel-gauge UI value is what macOS shows; fall back to ratio.
     let charge_percent = get_i64(battery_data, "UISoc")
@@ -302,12 +312,15 @@ fn parse(props: CFRef) -> BatteryInfo {
         .map(|v| v as f64)
         .unwrap_or_else(|| {
             if full_charge_capacity > 0 {
-                current_capacity as f64 / full_charge_capacity as f64 * 100.0
+                current_capacity_hint.unwrap_or(0) as f64 / full_charge_capacity as f64 * 100.0
             } else {
                 0.0
             }
         })
         .clamp(0.0, 100.0);
+
+    let current_capacity = current_capacity_hint
+        .unwrap_or_else(|| (charge_percent / 100.0 * full_charge_capacity as f64) as u32);
 
     let health_percent = if design_capacity > 0 {
         full_charge_capacity as f64 / design_capacity as f64 * 100.0
@@ -357,7 +370,9 @@ fn parse(props: CFRef) -> BatteryInfo {
         health_percent,
     );
 
-    let manufacture_date = get_i64(battery_data, "ManufactureDate").and_then(decode_date);
+    let manufacture_date = get_i64(battery_data, "ManufactureDate")
+        .or(get_i64(props, "ManufactureDate"))
+        .and_then(decode_date);
 
     BatteryInfo {
         present: true,
@@ -376,13 +391,35 @@ fn parse(props: CFRef) -> BatteryInfo {
         voltage_mv,
         amperage_ma,
         watts,
-        temperature_c: get_i64(props, "Temperature").unwrap_or(0) as f64 / 100.0,
+        temperature_c: get_i64(props, "Temperature")
+            .or(get_i64(props, "VirtualTemperature"))
+            .or(get_i64(battery_data, "Temperature"))
+            .unwrap_or(0) as f64
+            / 100.0,
         condition,
         adapter_watts: get_i64(adapter, "Watts").map(|w| w as u32),
-        manufacturer: get_str(props, "Manufacturer"),
+        manufacturer: get_str(props, "Manufacturer")
+            .or_else(|| get_str(battery_data, "Manufacturer")),
         device_name: get_str(props, "DeviceName"),
         serial: get_str(props, "Serial"),
         manufacture_date,
+    }
+}
+
+/// Interpret a bare capacity value that may hold either mAh or a 0-100
+/// percentage.
+///
+/// Values above 100 can only be mAh. On many models the bare top-level
+/// `MaxCapacity` key holds a percentage of the design capacity instead, so
+/// smaller values are treated as such. Returns 0 when the value is
+/// non-positive or the reference capacity is unknown.
+fn capacity_from_scale(value: i64, reference_mah: u32) -> u32 {
+    if value > 100 {
+        value as u32
+    } else if value > 0 && reference_mah > 0 {
+        (reference_mah as i64 * value / 100) as u32
+    } else {
+        0
     }
 }
 
